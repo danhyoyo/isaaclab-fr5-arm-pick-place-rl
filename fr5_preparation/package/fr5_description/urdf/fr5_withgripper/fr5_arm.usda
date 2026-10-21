@@ -1,0 +1,303 @@
+#usda 1.0
+(
+    customLayerData = {
+        string inertia_method = "uniform closed convex hull of original collision mesh, normalized to assigned mass"
+        string mass_reference = "https://github.com/FAIR-INNOVATION/frcobot_ros2/blob/main/fairino_description/urdf/fairino5_v6.urdf"
+        string status = "simulation_estimates_not_calibrated"
+    }
+    defaultPrim = "fr5_robot"
+    metersPerUnit = 1
+    subLayers = [
+        @fr5_withgripper.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "fr5_robot"
+{
+    over "base_link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.000001829609, 0.0000019235447, 0.031535666)
+        float3 physics:diagonalInertia = (0.002887166, 0.0028874208, 0.0038060902)
+        float physics:mass = 1.6185
+        quatf physics:principalAxes = (-0.3988523, -0.000025711855, 0.000069559435, 0.9170152)
+    }
+
+    over "shoulder_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.0000020957348, -0.061668817, -0.00564543)
+        float3 physics:diagonalInertia = (0.008848053, 0.01320032, 0.013385062)
+        float physics:mass = 4.64
+        quatf physics:principalAxes = (0.50866127, -0.49115846, -0.5080219, 0.4918748)
+    }
+
+    over "upperarm_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-1.0525337e-8, 0.2125, 0.13658394)
+        float3 physics:diagonalInertia = (0.031386096, 0.23350406, 0.24357449)
+        float physics:mass = 10.08
+        quatf physics:principalAxes = (-0.49999902, -0.4999989, 0.50000095, 0.50000113)
+    }
+
+    over "forearm_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.20021623, -4.041104e-7, 0.009120829)
+        float3 physics:diagonalInertia = (0.004434396, 0.049414396, 0.050172523)
+        float physics:mass = 2.71
+        quatf physics:principalAxes = (0.7067217, 0.70671165, -0.023482714, 0.023484977)
+    }
+
+    over "wrist1_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.0013569972, -1.4208098e-7, 0.11360883)
+        float3 physics:diagonalInertia = (0.0020678453, 0.0024169998, 0.0030716362)
+        float physics:mass = 1.56
+        quatf physics:principalAxes = (0.7069583, 0.7069587, -0.0144725, 0.0144903045)
+    }
+
+    over "wrist2_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (1.3313205e-7, -0.0015710203, 0.09725365)
+        float3 physics:diagonalInertia = (0.0014631847, 0.0025422145, 0.0026199708)
+        float physics:mass = 1.56
+        quatf physics:principalAxes = (0.49985307, 0.50015986, -0.4999465, -0.50004053)
+    }
+
+    over "wrist3_Link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-4.4414168e-7, -0.000011163785, 0.07847981)
+        float3 physics:diagonalInertia = (0.00020073599, 0.00020076179, 0.0002814743)
+        float physics:mass = 0.36
+        quatf physics:principalAxes = (0.96898836, -0.0000109974, 0.0000019907757, -0.24710634)
+    }
+
+    over "hand_base_link" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.012231512, -0.00064233673, -0.028955575)
+        float3 physics:diagonalInertia = (0.0013244913, 0.0053383443, 0.0059810495)
+        float physics:mass = 1.4156405
+        quatf physics:principalAxes = (0.5510246, 0.55102694, 0.4431346, -0.44313985)
+
+        over "collisions" (
+            instanceable = false
+        )
+        {
+            over "hand_base_link"
+            {
+                over "node_STL_BINARY_"
+                {
+                    bool physics:collisionEnabled = 0
+
+                    over "mesh" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding:physics = </fr5_robot/Looks/GripperContact>
+                        uniform token physics:approximation = "convexDecomposition"
+                        bool physics:collisionEnabled = 1
+                    }
+                }
+            }
+        }
+    }
+
+    over "finger_link1" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0729311, 0.08098036, 0.0047645885)
+        float3 physics:diagonalInertia = (0.000017156526, 0.00003616445, 0.000045462624)
+        float physics:mass = 0.058954388
+        quatf physics:principalAxes = (0.8730476, -0.04388364, -0.10047369, -0.47514966)
+
+        over "collisions" (
+            instanceable = false
+        )
+        {
+            over "finger_link1"
+            {
+                over "node_STL_BINARY_"
+                {
+                    bool physics:collisionEnabled = 0
+
+                    over "mesh" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding:physics = </fr5_robot/Looks/GripperContact>
+                        uniform token physics:approximation = "convexDecomposition"
+                        bool physics:collisionEnabled = 1
+                    }
+                }
+            }
+        }
+    }
+
+    over "finger_link2" (
+        prepend apiSchemas = ["PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0729311, 0.082480356, 0.004764589)
+        float3 physics:diagonalInertia = (0.000017156526, 0.00003616445, 0.00004546262)
+        float physics:mass = 0.058954388
+        quatf physics:principalAxes = (0.8730476, -0.043883648, -0.10047369, -0.47514963)
+
+        over "collisions" (
+            instanceable = false
+        )
+        {
+            over "finger_link2"
+            {
+                over "node_STL_BINARY_"
+                {
+                    bool physics:collisionEnabled = 0
+
+                    over "mesh" (
+                        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding:physics = </fr5_robot/Looks/GripperContact>
+                        uniform token physics:approximation = "convexDecomposition"
+                        bool physics:collisionEnabled = 1
+                    }
+                }
+            }
+        }
+    }
+
+    over "joints"
+    {
+        over "j1" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 100
+            float drive:angular:physics:maxForce = 150
+            float drive:angular:physics:stiffness = 2000
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "j2" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 100
+            float drive:angular:physics:maxForce = 150
+            float drive:angular:physics:stiffness = 2000
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "j3" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 100
+            float drive:angular:physics:maxForce = 150
+            float drive:angular:physics:stiffness = 2000
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "j4" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 25
+            float drive:angular:physics:maxForce = 28
+            float drive:angular:physics:stiffness = 500
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "j5" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 25
+            float drive:angular:physics:maxForce = 28
+            float drive:angular:physics:stiffness = 500
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "j6" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 25
+            float drive:angular:physics:maxForce = 28
+            float drive:angular:physics:stiffness = 500
+            float drive:angular:physics:targetPosition = 0
+            float drive:angular:physics:targetVelocity = 0
+            uniform token drive:angular:physics:type = "force"
+        }
+
+        over "fj1" (
+            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 20
+            float drive:linear:physics:maxForce = 40
+            float drive:linear:physics:stiffness = 2000
+            float drive:linear:physics:targetPosition = 0
+            float drive:linear:physics:targetVelocity = 0
+            uniform token drive:linear:physics:type = "force"
+            float physxJoint:maxJointVelocity = 0.1
+        }
+
+        over "fj2" (
+            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 20
+            float drive:linear:physics:maxForce = 40
+            float drive:linear:physics:stiffness = 2000
+            float drive:linear:physics:targetPosition = 0
+            float drive:linear:physics:targetVelocity = 0
+            uniform token drive:linear:physics:type = "force"
+            float physxJoint:maxJointVelocity = 0.1
+        }
+    }
+
+    over "Looks"
+    {
+        def Material "GripperContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:dynamicFriction = 0.6
+            float physics:restitution = 0
+            float physics:staticFriction = 0.8
+        }
+    }
+
+    over "root_joint"
+    {
+        int physxArticulation:solverPositionIterationCount = 16
+        int physxArticulation:solverVelocityIterationCount = 4
+    }
+}
+

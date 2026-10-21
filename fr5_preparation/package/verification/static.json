@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "dependencies": 6,
+  "unresolved": [],
+  "movable_joints": [
+    "j1",
+    "j2",
+    "j3",
+    "j4",
+    "j5",
+    "j6",
+    "fj1",
+    "fj2"
+  ],
+  "jaw_tip_gap_mm": {
+    "0.0": 80.07993059282546,
+    "0.02": 40.07993059334963,
+    "0.04": 0.07993059387378931
+  },
+  "total_assigned_mass_kg": 24.06204922187752,
+  "scope": "static geometry and parameter consistency; not a grasp-success evaluation"
+}

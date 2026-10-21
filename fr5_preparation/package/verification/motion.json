@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "gravity": false,
+  "cycles": 2,
+  "joint_names": [
+    "j1",
+    "j2",
+    "j3",
+    "j4",
+    "j5",
+    "j6",
+    "fj1",
+    "fj2"
+  ],
+  "segments": [
+    {
+      "state": "closed",
+      "target_m": 0.04,
+      "actual_m": [
+        0.03999999910593033,
+        0.04000000283122063
+      ]
+    },
+    {
+      "state": "open",
+      "target_m": 0.0,
+      "actual_m": [
+        -4.309694950233448e-18,
+        2.9870467807124185e-14
+      ]
+    },
+    {
+      "state": "closed",
+      "target_m": 0.04,
+      "actual_m": [
+        0.03999999910593033,
+        0.04000000283122063
+      ]
+    },
+    {
+      "state": "open",
+      "target_m": 0.0,
+      "actual_m": [
+        -4.265889119353865e-18,
+        2.987059655613217e-14
+      ]
+    }
+  ],
+  "scope": "isolated open/close motion; not grasp success"
+}

@@ -1,0 +1,18 @@
+"""Meters, kilograms, radians; all workspace coordinates are local to each environment."""
+CUBE_SIZE = 0.030
+CUBE_MASS = 0.030
+ROBOT_BASE_HEIGHT = 0.100
+TABLE_TOP = 0.100
+REST_HEIGHT = TABLE_TOP + CUBE_SIZE / 2
+GOAL_MARKER_Z = TABLE_TOP + 0.0005
+TCP_OFFSET = (-0.004, 0.00436, 0.125)
+DOWN_QUAT = (0.7071067811865476, 0.7071067811865476, 0.0, 0.0)  # x,y,z,w; yaw 90 degrees.
+HOME_JOINTS = dict(zip([f"j{i}" for i in range(1, 7)],
+                      [-0.03093938, -1.67983266, 1.71142303, -1.60238666, -1.57079610, 1.53985982]))
+PICK_CENTER = (-0.45, -0.12, REST_HEIGHT)
+GOAL_CENTER = (-0.45, 0.12, GOAL_MARKER_Z)
+ACTION_STEP = 0.006  # Integrated TCP target displacement per policy step (50 Hz).
+WORKSPACE_LOW = (-0.60, -0.28, REST_HEIGHT - 0.001)
+WORKSPACE_HIGH = (-0.28, 0.28, 0.55)
+LIFT_HEIGHT = REST_HEIGHT + 0.045
+SUCCESS_HOLD_SECONDS = 0.30

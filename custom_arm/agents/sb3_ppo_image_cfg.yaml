@@ -1,0 +1,33 @@
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Reference: https://github.com/DLR-RM/rl-baselines3-zoo/blob/master/hyperparams/ppo.yml#L32
+seed: 42
+
+# epoch * n_steps * nenvs: 500×512*8*8
+n_timesteps: 2417160000 # 1611440000
+policy: 'MultiInputPolicy'
+n_steps: 512
+# mini batch size: num_envs * nsteps / nminibatches 2048×512÷2048
+batch_size: 2048
+gae_lambda: 0.95
+gamma: 0.98
+n_epochs: 5
+ent_coef: 0.006
+vf_coef: 1.0
+learning_rate: !!float 1e-4
+clip_range: 0.2
+policy_kwargs: "dict(
+                  features_extractor_class=CustomMultiInputExtractor,
+                  net_arch=dict(pi=[256, 256], vf=[256, 256, 256]),
+                )"
+target_kl: 0.01
+max_grad_norm: 1.0
+
+# # Uses VecNormalize class to normalize obs
+# normalize_input: True
+# # Uses VecNormalize class to normalize rew
+# normalize_value: True
+# clip_obs: 5

@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "block_size_m": 0.036,
+  "joints": [
+    "fj1",
+    "fj2"
+  ],
+  "positions_m": {
+    "close_against_block": [
+      0.02068261243402958,
+      0.020475074648857117
+    ],
+    "reopen": [
+      -7.370644133351731e-18,
+      6.883651092713661e-14
+    ]
+  },
+  "scope": "collision blocking against a fixed box; not a lift/hold or grasp-success test"
+}

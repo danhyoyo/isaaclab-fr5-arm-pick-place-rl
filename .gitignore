@@ -1,0 +1,51 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.python-version
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Simulator caches and generated experiment output (at any depth)
+logs/
+evaluation/
+exported/
+videos/
+recordings/
+.cache/
+uv-cache/
+*.log
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tfevents.*
+
+# Keep assets, parameters, manifests, and checked-in verification JSON.
+# Do not ignore USD, URDF, meshes, textures, or all JSON files.
+
+# Local editor / operating system files
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.bak
+*~
+
+# Local credentials and machine-specific environment settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
