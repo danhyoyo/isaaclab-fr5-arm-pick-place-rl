@@ -32,10 +32,10 @@ original inputs, not the hashes of every modified output.
 The retained `cumotion_arm_description/package.xml` identifies **Robot Mania**
 as maintainer and declares **Apache License 2.0**. The custom-arm task, gripper
 diagnostics, cube asset, and imported USD layers are retained as the earlier
-baseline. The previous local README referred to a tutorial but did not identify
-its repository or video URL. No unverified tutorial URL or additional authorship
-claim has been added. The precise upstream tutorial and asset license text still
-need to be recovered before treating attribution for this baseline as complete.
+baseline. The repository maintainer identified the
+[original pick-and-place tutorial on YouTube](https://www.youtube.com/watch?v=IGVywY_FI3c)
+as the tutorial source for this baseline. The FR5 adaptation builds on that
+workflow. The upstream repository URL and asset license text remain to be recovered.
 
 ## Isaac Lab Project Developers
 

@@ -359,7 +359,8 @@ are excluded. Keep runtime assets and provenance records in the repository.
 - **Wang Ziyuan / WangZY233** — original FR5 robot-description source:
   [FR5_Reinforcement-learning](https://github.com/WangZY233/FR5_Reinforcement-learning).
 - **Robot Mania** — named maintainer of the retained custom-arm description.
-  The exact tutorial repository/video was not identified in the previous local README.
+  Original pick-and-place tutorial, identified by the repository maintainer:
+  [YouTube tutorial](https://www.youtube.com/watch?v=IGVywY_FI3c).
 - **The Isaac Lab Project Developers** — [Isaac Lab](https://github.com/isaac-sim/IsaacLab)
   and existing task foundations; original source headers are preserved.
 - **FAIRINO / FAIR-INNOVATION** — nominal arm mass reference from the
