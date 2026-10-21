@@ -150,11 +150,11 @@ replacement of framework files, or additional virtual environment is required.
 ### 2. Obtain this repository and its large assets
 
 Install [Git LFS](https://git-lfs.com/) before cloning. Replace the example URL
-with the URL of this repository after it is published:
+with your fork URL if you are using a fork:
 
 ```powershell
 git lfs install
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git pick_and_place
+git clone https://github.com/danhyoyo/isaaclab-fr5-pick-place-rl.git pick_and_place
 Set-Location .\pick_and_place
 git lfs pull
 ```
@@ -374,4 +374,5 @@ licenses and notices are preserved in [licenses/](licenses/) and existing file
 headers. No blanket license has been assigned to the entire repository or to new
 maintainer contributions. See [licensing scope](THIRD_PARTY_NOTICES.md#licensing-scope)
 for the remaining provenance and licensing details.
+
 

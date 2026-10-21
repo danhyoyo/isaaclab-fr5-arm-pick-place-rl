@@ -23,7 +23,7 @@ repository and replace the example remote URL below with its actual URL:
 
 ```powershell
 git commit -m "Add FR5 pick-and-place adaptation for Isaac Lab"
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+git remote add origin https://github.com/danhyoyo/isaaclab-fr5-pick-place-rl.git
 git push -u origin main
 ```
 
@@ -49,3 +49,4 @@ results.
 Avoid committing generated training output. Share trained checkpoints as separately
 identified release artifacts with the compatible task configuration and evaluation
 results. The repository's ignore rules exclude checkpoints and exported policies.
+
