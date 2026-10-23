@@ -7,6 +7,8 @@
 ![Learning: PPO / RSL-RL](https://img.shields.io/badge/Learning-PPO%20%2F%20RSL--RL-F59E0B?style=flat-square)
 ![Commands: PowerShell](https://img.shields.io/badge/Commands-PowerShell-5391FE?style=flat-square)
 
+![Isaac Lab FR5 pick-and-place simulation](docs/images/fr5-pick-place-simulation.png)
+
 **Train and evaluate a FAIRINO FR5 arm to pick, lift, transfer, and release a cube in simulation.**
 
 [Quick start](#quick-start) · [Architecture](#system-architecture) · [Training guide](fr5_rl_development/TRAINING.md) · [Original tutorial](https://www.youtube.com/watch?v=IGVywY_FI3c)
