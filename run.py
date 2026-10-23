@@ -1,92 +1,91 @@
-"""Run this external task with the Python environment that contains Isaac Lab.
-
-Examples:
-    D:\\IsaacLab\\.venv\\Scripts\\python.exe run.py check
-    D:\\IsaacLab\\.venv\\Scripts\\python.exe run.py train --num_envs 8 --max_iterations 2 --headless
-"""
-
-from __future__ import annotations
-
+"""Independent FR5 task launcher using the existing Isaac Lab Python environment."""
 import argparse
-import importlib
-import importlib.util
 import os
 from pathlib import Path
 import sys
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-TASK = "Isaac-Lift-Cube-Place-Custom-Arm-v0"
-PLAY_TASK = "Isaac-Lift-Cube-Place-Custom-Arm-Play-v0"
+ROOT = Path(__file__).resolve().parent
 
 
-def register_tasks() -> None:
-    """Load this task package without installing it into the Isaac Lab venv."""
-    if "pick_and_place.custom_arm" in sys.modules:
-        return
-    spec = importlib.util.spec_from_file_location(
-        "pick_and_place", PROJECT_ROOT / "__init__.py",
-        submodule_search_locations=[str(PROJECT_ROOT)],
-    )
-    package = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = package
-    spec.loader.exec_module(package)
-    importlib.import_module("pick_and_place.custom_arm")
+def register_tasks():
+    sys.path.insert(0, str(ROOT)) if str(ROOT) not in sys.path else None
+    import fr5_pick_place
+    return fr5_pick_place
 
 
-def main() -> int:
-    # Isaac Lab prints Unicode status panels, including when output is redirected.
+def resolve_play_checkpoint(arguments, tasks):
+    """The backend manifest selector uses the training task id, even for a separate play registration."""
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument("--checkpoint")
+    selector.add_argument("--experiment_name", default="fr5_pick_place")
+    selector.add_argument("--agent", default="rsl_rl_cfg_entry_point")
+    selection, _ = selector.parse_known_args(arguments)
+    if selection.checkpoint != "latest":
+        return arguments
+    from isaaclab_rl.entrypoints.common import resolve_checkpoint_selector
+    checkpoint = resolve_checkpoint_selector(
+        str(ROOT / "logs/rsl_rl" / selection.experiment_name), "latest", library="rsl_rl",
+        task=tasks.TASK, checkpoint_pattern=r"model_.*\.pt", metadata={"agent": selection.agent})
+    result = list(arguments)
+    for i, value in enumerate(result):
+        if value == "--checkpoint":
+            result[i + 1] = str(checkpoint)
+        elif value == "--checkpoint=latest":
+            result[i] = "--checkpoint=" + str(checkpoint)
+    print(f"Resolved latest FR5 checkpoint: {checkpoint}", flush=True)
+    return result
+
+
+def main():
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("check", "train", "play"))
-    parser.add_argument("--headless", action="store_true", help="Run without a visualizer.")
+    parser.add_argument("mode", choices=["check", "train", "play"])
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--steps", type=int, help="Optional bounded playback (play mode only).")
     args, remaining = parser.parse_known_args()
-
+    if args.steps is not None and (args.mode != "play" or args.steps < 1):
+        parser.error("--steps must be positive and is available only in play mode")
     import warp as wp
     wp.config.enable_backward = False
-    register_tasks()
-
-    # Isaac Lab stores logs relative to cwd. Keep them with this project.
-    os.chdir(PROJECT_ROOT)
-
+    tasks = register_tasks()
+    os.chdir(ROOT)
     if args.mode == "check":
         if remaining:
-            parser.error("check does not accept extra arguments")
+            parser.error("check does not accept additional arguments")
         from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry
-
-        for task in (TASK, PLAY_TASK):
-            cfg = load_cfg_from_registry(task, "env_cfg_entry_point")
+        from fr5_cfg import ROBOT_USD
+        from fr5_pick_place.constants import CUBE_SIZE
+        assert ROBOT_USD.is_file(), ROBOT_USD
+        for name in [tasks.TASK, tasks.PLAY_TASK]:
+            cfg = load_cfg_from_registry(name, "env_cfg_entry_point")
             cfg.validate()
-            agent = load_cfg_from_registry(task, "rsl_rl_cfg_entry_point")
-            # Runner configs contain intentionally missing deprecated fields;
-            # RSL-RL resolves those when constructing the runner.
-            if not agent.actor.hidden_dims or not agent.critic.hidden_dims:
-                raise ValueError(f"Missing actor/critic hidden dimensions for {task}")
-            for asset in (cfg.scene.robot, cfg.scene.object):
-                path = Path(asset.spawn.usd_path)
-                if not path.is_file():
-                    raise FileNotFoundError(path)
-            print(f"OK: {task}; physics={type(cfg.sim.physics).__name__}")
+            agent = load_cfg_from_registry(name, "rsl_rl_cfg_entry_point")
+            assert agent.actor.hidden_dims and agent.critic.hidden_dims
+            print(f"OK: {name}; cube={CUBE_SIZE * 1000:.0f} mm; policy=TCP xyz + gripper; asset={ROBOT_USD}")
         return 0
-
+    has_viz = any(s in ["--viz", "--visualizer"] or s.startswith(("--viz=", "--visualizer=")) for s in remaining)
+    if args.headless and has_viz:
+        parser.error("Use --headless or --viz, not both")
+    defaults = ["--viz", "none"] if args.headless else ([] if has_viz else ["--viz", "kit"])
+    if not any(s == "--task" or s.startswith("--task=") for s in remaining):
+        defaults += ["--task", tasks.PLAY_TASK if args.mode == "play" else tasks.TASK]
+    defaults += ["--rl_library", "rsl_rl"]
     from isaaclab_rl.entrypoints import run_train_cli, run_play_cli
-
-    has_visualizer = any(
-        arg in ("--viz", "--visualizer") or arg.startswith(("--viz=", "--visualizer="))
-        for arg in remaining
-    )
-    if args.headless and has_visualizer:
-        parser.error("Use either --headless or --viz, not both")
-    defaults = ["--viz", "none"] if args.headless else []
-    if args.mode == "play" and not args.headless and not has_visualizer:
-        defaults += ["--viz", "kit"]
-    if not any(arg == "--task" or arg.startswith("--task=") for arg in remaining):
-        defaults += ["--task", PLAY_TASK if args.mode == "play" else TASK]
-    if not any(arg == "--rl_library" or arg.startswith("--rl_library=") for arg in remaining):
-        defaults += ["--rl_library", "rsl_rl"]
-    run_cli = run_train_cli if args.mode == "train" else run_play_cli
-    return run_cli(defaults + remaining)
+    if args.mode == "play":
+        remaining = resolve_play_checkpoint(remaining, tasks)
+    if args.mode == "play" and args.steps:
+        from unittest.mock import patch
+        import torch
+        def bounded(step, **kwargs):
+            with torch.inference_mode():
+                for _ in range(args.steps):
+                    step()
+            print(f"PASS: policy loaded and played {args.steps} steps", flush=True)
+        with patch("isaaclab_rl.entrypoints.backends.play_rsl_rl.run_playback", bounded):
+            return run_play_cli(defaults + remaining)
+    return (run_train_cli if args.mode == "train" else run_play_cli)(defaults + remaining)
 
 
 if __name__ == "__main__":

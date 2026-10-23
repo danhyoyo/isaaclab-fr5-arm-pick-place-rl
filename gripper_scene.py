@@ -1,98 +1,75 @@
-"""Show a stationary robot opening and closing its gripper, without an RL task.
-
-uv run --project D:\\IsaacLab --no-sync python gripper_scene.py
-"""
-
+"""Run a bounded gripper test, or display the robot with --viz kit --cycles 0."""
 import argparse
-import math
-import sys
-import time
-
+import json
+from pathlib import Path
+import torch
 import warp as wp
-
-from run import register_tasks
 
 
 def main():
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     wp.config.enable_backward = False
-    register_tasks()
-
     from isaaclab.app import add_launcher_args, launch_simulation
     from isaaclab.assets import Articulation
     from isaaclab.utils import clone
     from isaaclab_physx.physics import PhysxCfg
     import isaaclab.sim as sim_utils
-    from pick_and_place.custom_arm.joint_pos_place_env_cfg import (
-        CUSTOM_ARM_CFG, GRIPPER_OPEN_ANGLE, GRIPPER_CLOSED_ANGLE,
-    )
+    from fr5_cfg import FR5_CFG, GRIPPER_OPEN, GRIPPER_CLOSED, GRIPPER_JOINTS
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cycles", type=int, default=0, help="Close/open cycles; 0 repeats until the window closes.")
+    parser.add_argument("--cycles", type=int, default=2)
+    parser.add_argument("--gravity", action="store_true", help="Include gravity in the joint-motion test.")
     add_launcher_args(parser)
     parser.set_defaults(visualizer="kit")
     args = parser.parse_args()
     if args.cycles < 0:
-        parser.error("--cycles must be non-negative")
-
-    sim_cfg = sim_utils.SimulationCfg(
-        dt=0.01, device=args.device, physics=PhysxCfg(), gravity=(0.0, 0.0, 0.0),
-    )
-    with launch_simulation(sim_cfg, args):
-        sim = sim_utils.SimulationContext(sim_cfg)
+        parser.error("cycles must be nonnegative")
+    cfg = sim_utils.SimulationCfg(dt=0.005, device=args.device, physics=PhysxCfg(),
+                                 gravity=(0, 0, -9.81 if args.gravity else 0.0))
+    records = []
+    with launch_simulation(cfg, args):
+        sim = sim_utils.SimulationContext(cfg)
         try:
-            ground = sim_utils.GroundPlaneCfg()
-            ground.func("/World/Ground", ground)
-            light = sim_utils.DomeLightCfg(intensity=3000.0, color=(0.8, 0.8, 0.8))
+            light = sim_utils.DomeLightCfg(intensity=2500.0)
             light.func("/World/Light", light)
-
-            robot_cfg = clone(CUSTOM_ARM_CFG)
+            robot_cfg = clone(FR5_CFG)
             robot_cfg.prim_path = "/World/Robot"
+            robot_cfg.init_state.pos = (0, 0, 0.6)
             robot = Articulation(robot_cfg)
-            sim.set_camera_view(eye=(0.45, -0.40, 0.38), target=(0.18, -0.01, 0.22))
+            sim.set_camera_view(eye=(-1.3, -1.0, 1.1), target=(-0.65, -0.2, 0.7))
             sim.reset()
             robot.write_joint_position_to_sim_index(position=robot.data.default_joint_pos.torch.clone())
             robot.write_joint_velocity_to_sim_index(velocity=robot.data.default_joint_vel.torch.clone())
             robot.reset()
+            ids = [robot.joint_names.index(name) for name in GRIPPER_JOINTS]
             target = robot.data.default_joint_pos.torch.clone()
-            hand = robot.joint_names.index("cumotion_arm_joint_hand")
-            half_cycle = round(2.0 / sim_cfg.dt)
+            segment = round(2.0 / cfg.dt)
             steps = 0
-            angles = {"CLOSE": [], "OPEN": []}
-            print("Gripper scene: CLOSE -60 deg for 2 s, OPEN 0 deg for 2 s. Ctrl+C to stop.")
-
-            while sim.is_running() and (args.cycles == 0 or steps < args.cycles * 2 * half_cycle):
-                started = time.perf_counter()
-                closing = (steps // half_cycle) % 2 == 0
-                label = "CLOSE" if closing else "OPEN"
-                if steps % half_cycle == 0:
-                    angle_target = GRIPPER_CLOSED_ANGLE if closing else GRIPPER_OPEN_ANGLE
-                    target[:, hand] = angle_target
-                    print(f"{label}: target={math.degrees(angle_target):.1f} deg")
-                # Hold every arm joint at its default pose; move only the hand.
+            while sim.is_running() and (args.cycles == 0 or steps < args.cycles * segment * 2):
+                closing = (steps // segment) % 2 == 0
+                value = GRIPPER_CLOSED if closing else GRIPPER_OPEN
+                target[:, ids] = value
                 robot.actuators.target_command.set_position_index(value=target)
                 robot.write_data_to_sim()
                 sim.step()
-                robot.update(sim_cfg.dt)
+                robot.update(cfg.dt)
                 steps += 1
-                if steps % half_cycle == 0:
-                    angle = math.degrees(robot.data.joint_pos.torch[0, hand].item())
-                    angles[label].append(angle)
-                    print(f"{label}: measured={angle:.2f} deg")
-                remaining = sim_cfg.dt - (time.perf_counter() - started)
-                if remaining > 0:
-                    time.sleep(remaining)
-
-            if args.cycles and steps == args.cycles * 2 * half_cycle:
-                if not all(abs(angle - math.degrees(GRIPPER_CLOSED_ANGLE)) < 2 for angle in angles["CLOSE"]):
-                    raise AssertionError(f"Gripper failed to close: {angles}")
-                if not all(abs(angle) < 2 for angle in angles["OPEN"]):
-                    raise AssertionError(f"Gripper failed to open: {angles}")
-                print(f"PASS: completed {args.cycles} close/open cycles")
-        except KeyboardInterrupt:
-            pass
+                if steps % segment == 0:
+                    actual = robot.data.joint_pos.torch[0, ids].cpu().tolist()
+                    entry = {"state": "closed" if closing else "open", "target_m": value, "actual_m": actual}
+                    records.append(entry)
+                    print(json.dumps(entry), flush=True)
+                    assert all(abs(q - value) < 0.001 for q in actual), entry
+                    assert abs(actual[0] - actual[1]) < 0.001, entry
+                    assert torch.isfinite(robot.data.joint_pos.torch).all()
+            if args.cycles:
+                assert len(records) == args.cycles * 2
+                output = {"passed": True, "gravity": args.gravity, "cycles": args.cycles,
+                          "joint_names": robot.joint_names, "segments": records,
+                          "scope": "isolated open/close motion; not grasp success"}
+                root = Path(__file__).resolve().parent / "verification"
+                root.mkdir(exist_ok=True)
+                (root / ("motion_gravity.json" if args.gravity else "motion.json")).write_text(json.dumps(output, indent=2))
+                print("PASS: FR5 gripper motion", flush=True)
         finally:
             sim.stop()
             sim.clear_instance()

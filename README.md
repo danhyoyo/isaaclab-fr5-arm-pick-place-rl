@@ -7,24 +7,26 @@
 ![Learning: PPO / RSL-RL](https://img.shields.io/badge/Learning-PPO%20%2F%20RSL--RL-F59E0B?style=flat-square)
 ![Commands: PowerShell](https://img.shields.io/badge/Commands-PowerShell-5391FE?style=flat-square)
 
-![Isaac Lab FR5 pick-and-place simulation](docs/images/fr5-pick-place-simulation.png)
-
 **Train and evaluate a FAIRINO FR5 arm to pick, lift, transfer, and release a cube in simulation.**
 
-[Quick start](#quick-start) · [Architecture](#system-architecture) · [Training guide](fr5_rl_development/TRAINING.md) · [Original tutorial](https://www.youtube.com/watch?v=IGVywY_FI3c)
+![Parallel FR5 pick-and-place environments in Isaac Lab](docs/images/fr5-pick-place-simulation.png)
+
+*Parallel FR5 pick-and-place environments running in Isaac Lab.*
+
+[Quick start](#quick-start) · [Architecture](#system-architecture) · [Training guide](TRAINING.md)
 
 </div>
 
-The repository adapts an existing custom-arm pick-and-place workflow to the
-**FR5 six-axis arm and a two-finger parallel gripper**, using NVIDIA Isaac Lab,
-PhysX, and PPO through RSL-RL. **The maintainer's main contribution is the FR5
-integration:** prepared robot assets, Cartesian end-effector control, an FR5 task,
-and validation utilities. The earlier custom-arm baseline remains available.
+This standalone project integrates a **FAIRINO FR5 six-axis arm and two-finger
+parallel gripper** with NVIDIA Isaac Lab, PhysX, and PPO through RSL-RL. It
+includes prepared robot assets, Cartesian end-effector control, an FR5-specific
+pick-and-place task, scripted validation, training, playback, and evaluation.
 
-> **Status:** simulation and training utilities are implemented. No trained FR5
-> checkpoint is included. Scripted demonstrations and short training checks are
-> documented separately from learned-policy results. Dynamics are simulation
-> estimates; real-robot deployment has not been validated.
+> **Status:** the simulation, task, and training pipeline are implemented. No
+> converged FR5 checkpoint is included. The retained two-iteration PPO smoke
+> checkpoint achieved 0/2 successful evaluation episodes and is only evidence
+> that the pipeline runs. Dynamics are simulation estimates; real-robot
+> deployment has not been validated.
 
 ---
 
@@ -40,50 +42,57 @@ and validation utilities. The earlier custom-arm baseline remains available.
 - [Task specification](#task-specification)
 - [Repository structure](#repository-structure)
 - [Validation](#validation)
-- [Original custom-arm baseline](#original-custom-arm-baseline)
+- [Asset preparation and limitations](#asset-preparation-and-limitations)
 - [Troubleshooting](#troubleshooting)
-- [Publishing and contributing](#publishing-and-contributing)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
 ## Overview and features
 
-- **FR5 integration:** six arm joints (`j1`–`j6`) and two independently simulated
-  sliding fingers (`fj1`, `fj2`), with a prepared USD physics override.
-- **Asset preparation:** relative dependencies, mesh-based inertia estimates,
-  revised mass parameters, portable materials, and gripper collision setup.
-- **Cartesian control:** three incremental TCP position actions with differential
-  inverse kinematics and a binary open/close action; fixed downward orientation.
-- **FR5 pick-and-place task:** randomized cube and target positions, staged rewards,
-  episode history, and success conditions requiring lifting, release, and withdrawal.
-- **PPO workflow:** configuration checks, training, checkpoint playback, bounded
-  playback, and episode-based evaluation.
-- **Diagnostics:** static asset checks, finger motion/contact checks, a physical
-  waypoint demonstration, and task-logic tests.
+- **Standalone FR5 integration:** six arm joints (`j1`–`j6`) and two simulated
+  sliding fingers (`fj1`, `fj2`), with a prepared USD physics override and no
+  dependency on another pick-and-place project.
+- **Cartesian control:** three incremental TCP position actions use differential
+  inverse kinematics; a fourth binary action opens or closes both fingers while
+  the end-effector maintains a fixed downward orientation.
+- **Pick-and-place task:** the 30 mm cube and target are randomized in separate
+  regions, with staged rewards and success conditions that require lifting,
+  placement, release, and withdrawal.
+- **PPO workflow:** configuration checks, headless or visual training, checkpoint
+  playback, bounded playback, resume support, and episode-based evaluation.
+- **Physical scripted demonstration:** `demo.py` drives the same four actions as
+  the policy through approach, grasp, lift, transfer, release, and withdrawal;
+  the object is not attached or teleported during the sequence.
+- **Validation utilities:** static asset validation, gripper motion/contact
+  checks, task-logic regression tests, and a full-environment smoke test.
 
-The FR5 work builds on upstream assets and Isaac Lab; it does not claim authorship
-of the original robot meshes, simulator, framework, or tutorial.
+The project uses simulator state observations rather than cameras. It does not
+cover arbitrary object orientation, perception, real-robot control, or sim-to-real
+transfer.
 
 ## System architecture
 
 ```mermaid
 flowchart TB
     subgraph Startup["Startup and configuration"]
-        CLI["FR5 run.py: check / train / play"]
+        CLI["run.py: check / train / play"]
         Registry["Gymnasium FR5 task registrations"]
-        Config["env_cfg.py + ppo_cfg.py"]
-        Assets["fr5_preparation/package: fr5_cfg.py + USD / meshes"]
+        EnvCfg["env_cfg.py + constants.py"]
+        PPOCfg["ppo_cfg.py"]
+        Assets["fr5_cfg.py + USD / meshes"]
         CLI --> Registry
-        Registry --> Config
-        Assets --> Config
+        Registry --> EnvCfg
+        Registry --> PPOCfg
+        Assets --> EnvCfg
     end
+
     subgraph Runtime["Simulation and learning"]
         Runner["Isaac Lab entrypoints + RSL-RL PPO"]
         Policy["Actor / critic or loaded policy"]
-        Actions["Cartesian delta XYZ + binary gripper"]
-        IK["Differential IK + finger joint targets"]
-        Sim["Isaac Lab FR5 environment / PhysX"]
-        MDP["State observations, rewards, episode history, terminations"]
+        Actions["TCP delta XYZ + binary gripper"]
+        IK["Differential IK + finger targets"]
+        Sim["FR5 environments in PhysX"]
+        MDP["Observations, rewards, history, terminations"]
         Runner --> Policy
         Policy --> Actions
         Actions --> IK
@@ -91,221 +100,191 @@ flowchart TB
         Sim --> MDP
         MDP --> Runner
     end
-    Config --> Runner
+
+    EnvCfg --> Runner
+    PPOCfg --> Runner
     Demo["demo.py: scripted waypoints"] --> Actions
     Eval["evaluate.py: checkpoint inference"] --> Policy
     Runner --> Checkpoints["logs/rsl_rl/fr5_pick_place/"]
     Eval --> Report["evaluation/latest.json"]
 ```
 
-`run.py` resolves the prepared asset package and registers the FR5 tasks before
-calling the installed Isaac Lab backend. During simulation, the policy commands
-TCP position increments and finger opening/closing; differential IK converts the
-Cartesian target to arm joint targets. Observations and reward/termination logic
-use simulator state. `demo.py` supplies scripted actions, while `evaluate.py`
-loads a learned checkpoint and counts completed episode outcomes.
-
-The root `run.py` launches the earlier custom arm. Use
-`fr5_rl_development/run.py` for all FR5 training and playback.
+`run.py` registers the two FR5 Gymnasium tasks before calling the installed
+Isaac Lab training or playback entrypoint. The policy commands TCP displacement
+and gripper state; differential IK converts the Cartesian target into arm joint
+targets. Task observations, rewards, history, and termination conditions are
+computed from simulator state.
 
 ## Requirements
 
-The following versions were inspected in the development environment. They are
-an environment reference, not a portable dependency lockfile.
+| Component | Requirement | Notes |
+| --- | --- | --- |
+| Operating system | Windows | Commands below use PowerShell. |
+| Isaac Lab / Isaac Sim | Existing compatible installation | This checkout was developed against the environment at `D:\IsaacLab`; no portable lockfile is included. |
+| RL stack | RSL-RL integration supplied with Isaac Lab | The launcher imports `isaaclab_rl` and selects `rsl_rl`. |
+| Physics | PhysX backend supplied with Isaac Lab | The environment imports `isaaclab_physx`. |
+| GPU | NVIDIA GPU supported by the selected Isaac Sim release | Start with eight environments and increase only after checking VRAM use. |
+| Python packages | Torch, Warp, Gymnasium, NumPy, Isaac Lab packages | Use the Python interpreter belonging to the Isaac Lab environment. |
 
-| Component | Development environment |
-| --- | --- |
-| Operating system | Windows; commands below use PowerShell |
-| Python | 3.12.15 |
-| Isaac Lab checkout `VERSION` | 3.0.0 |
-| Installed `isaaclab` distribution metadata | 27.2.0 |
-| Isaac Sim | 6.2.0.0 |
-| RSL-RL (`rsl-rl-lib`) | 5.5.1 |
-| PyTorch | 2.11.0+cu130 |
-| Gymnasium | 1.3.0 |
-| Warp | 1.17.0 |
-| Physics | PhysX |
-
-Use an NVIDIA GPU and driver supported by your Isaac Sim release. GPU memory needs
-depend on the number of environments; start with eight environments before scaling.
-The launchers use `isaaclab_rl.entrypoints` and `isaaclab_physx` from the installed
-checkout. Compatibility with Isaac Lab 2.x or other 3.x checkouts is not established.
-Linux has not been verified for this repository.
+Asset rebuilding additionally uses `trimesh` and the runtime's `pxr` USD
+bindings. A generic Python environment is not a substitute for the matching
+Isaac Lab and Isaac Sim runtime.
 
 ## Installation
 
-### 1. Set up Isaac Lab and its matching Isaac Sim runtime
+### 1. Prepare Isaac Lab
 
-Install a compatible Isaac Lab / Isaac Sim environment using the
-[official Isaac Lab installation documentation](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
-Select the instructions matching your release; the version table above describes
-this project's local environment and does not mean that the latest default branch
-will expose the same APIs.
+Install Isaac Lab and its matching Isaac Sim runtime by following the
+[official installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
+This repository runs outside the Isaac Lab source tree and does not require
+modifying framework files.
 
-The environment must include Isaac Lab, Isaac Sim, its PhysX backend, the Isaac Lab
-RL/task packages, RSL-RL, Torch, Warp, Gymnasium, and NumPy. Asset rebuilding also
-uses `trimesh` and the runtime's `pxr` USD bindings. A generic `pip install isaaclab`
-or an arbitrary Torch installation is not a substitute for that environment.
+### 2. Keep the project assets together
 
-This task runs outside the Isaac Lab source tree. No project installation,
-replacement of framework files, or additional virtual environment is required.
+The robot's USD layers reference files under `fr5_description/`. Keep the full
+directory when copying or cloning the project. The main composed asset is:
 
-### 2. Obtain this repository and its large assets
-
-Install [Git LFS](https://git-lfs.com/) before cloning. Use your fork URL if needed:
-
-```powershell
-git lfs install
-git clone https://github.com/danhyoyo/isaaclab-fr5-pick-place-rl.git pick_and_place
-Set-Location .\pick_and_place
-git lfs pull
+```text
+fr5_description/urdf/fr5_withgripper/fr5_arm.usda
 ```
 
-Keep all mesh files, textures, USD configuration layers, and override layers.
-An LFS pointer without its downloaded object cannot be opened as a robot asset.
+### 3. Select the Isaac Lab interpreter
 
-### 3. Select the Isaac Lab Python interpreter
-
-Run the following from the repository root. Adjust the interpreter location:
+From the repository root, adjust the interpreter path if your Isaac Lab checkout
+is installed elsewhere:
 
 ```powershell
+Set-Location D:\IsaacProjects\fr5_arm
 $IsaacPython = "D:\IsaacLab\.venv\Scripts\python.exe"
 & $IsaacPython -c "import torch, warp, gymnasium, isaaclab, isaaclab_physx, isaaclab_rl; print('Runtime imports OK')"
-& $IsaacPython .\fr5_rl_development\run.py check
+& $IsaacPython .\run.py check
 ```
 
-The FR5 launcher locates `fr5_preparation/package/` relative to the repository,
-so no asset copy or machine-specific `PYTHONPATH` is needed. The configuration check
-validates both FR5 task registrations and the main robot asset path without
-starting a simulation. Run the static asset check below to validate dependencies.
-
-If you already manage Isaac Lab with `uv`, the equivalent invocation is:
+If the environment is managed with `uv`, the equivalent configuration check is:
 
 ```powershell
-uv run --project D:\IsaacLab --no-sync python .\fr5_rl_development\run.py check
+uv run --project D:\IsaacLab --no-sync python .\run.py check
 ```
 
-`--no-sync` reuses the installed environment. It does not install missing packages.
+`--no-sync` reuses the installed environment; it does not install missing
+packages.
 
-**Expected first result:** the configuration check prints an `OK:` line for both
-`Isaac-FR5-PickPlace-v0` and `Isaac-FR5-PickPlace-Play-v0`, including the resolved
-robot asset path. This confirms configuration loading; it does not exercise GPU
-simulation or establish grasp success.
+**Expected first result:** `run.py check` prints an `OK:` line for both
+`Isaac-FR5-PickPlace-v0` and `Isaac-FR5-PickPlace-Play-v0`, including the cube
+size, action policy, and resolved robot asset. This verifies configuration
+loading, not GPU simulation or grasp success.
 
 ## Quick start
 
 All commands below assume the repository root and `$IsaacPython` defined above.
 
 ```powershell
-# Verify the composed asset and robot parameters
-& $IsaacPython .\fr5_preparation\package\validate_asset.py
+# Validate the composed asset and parameter records
+& $IsaacPython .\validate_asset.py
 
-# Run a scripted, contact-based demonstration in a simulation window
-& $IsaacPython .\fr5_rl_development\demo.py --viz kit --num_envs 1
+# Run one scripted contact-based demonstration in a viewer
+& $IsaacPython .\demo.py --viz kit --num_envs 1
 
-# Exercise the training pipeline with a small headless run
-& $IsaacPython .\fr5_rl_development\run.py train --num_envs 8 --max_iterations 2 --headless --run_name smoke
+# Exercise the complete training pipeline with a short headless run
+& $IsaacPython .\run.py train --num_envs 8 --max_iterations 2 --headless --run_name smoke
 
-# Play the latest checkpoint generated by this FR5 experiment
-& $IsaacPython .\fr5_rl_development\run.py play --num_envs 4 --checkpoint latest
+# Play the latest checkpoint from this FR5 experiment
+& $IsaacPython .\run.py play --num_envs 4 --checkpoint latest
 ```
 
-The demo controls the same four actions as the RL policy and moves the cube through
-physical contact after the initial reset. It is a scripted controller, not a learned
-policy. The short training command checks the pipeline and is insufficient to learn
-the task. Close the viewer or press Ctrl+C to stop interactive playback.
-
-**Expected behavior:** the demo runs the approach → grasp → lift → transfer →
-release → withdrawal sequence and exits after its finite check. The training
-smoke run produces a new log directory and model checkpoints. Playback opens the
-viewer using the generated model; it does not imply the smoke policy has learned
-the task. Generated paths are listed in [Repository structure](#repository-structure).
+The scripted demo is a deterministic controller, not a learned policy. The
+two-iteration training command checks the training pipeline but is insufficient
+to learn the task. Close the viewer or press `Ctrl+C` to stop interactive
+playback.
 
 ## Training, playback, and evaluation
 
-### Start a new training run
+### Start a training run
 
 ```powershell
-& $IsaacPython .\fr5_rl_development\run.py train --num_envs 128 --max_iterations 5000 --headless --run_name fr5_cube30
+& $IsaacPython .\run.py train --num_envs 128 --max_iterations 5000 --headless --run_name fr5_cube30
 ```
 
-Increase `--num_envs` after checking VRAM and throughput. Use `--viz kit` instead
-of `--headless` to train with a viewer; do not supply both flags.
+Increase `--num_envs` only after checking VRAM use and throughput. Omit
+`--headless` to use the default Kit viewer, or explicitly pass `--viz kit`.
+Do not combine `--headless` with `--viz` or `--visualizer`.
 
-### Play or resume a specific checkpoint
+### Play or resume a checkpoint
 
-After training, select the most recently written local model file and use its
-absolute path. Set `$Checkpoint` to a different existing model to compare runs:
+Play the newest FR5 checkpoint:
 
 ```powershell
-$LatestModel = Get-ChildItem .\fr5_rl_development\logs\rsl_rl\fr5_pick_place -Recurse -Filter "model_*.pt" |
+& $IsaacPython .\run.py play --num_envs 4 --checkpoint latest
+```
+
+To select a specific model, resolve its absolute path first:
+
+```powershell
+$LatestModel = Get-ChildItem .\logs\rsl_rl\fr5_pick_place -Recurse -Filter "model_*.pt" |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $LatestModel) { throw "No FR5 checkpoint found. Run training first." }
 $Checkpoint = $LatestModel.FullName
-& $IsaacPython .\fr5_rl_development\run.py play --num_envs 4 --checkpoint $Checkpoint
-& $IsaacPython .\fr5_rl_development\run.py play --num_envs 4 --checkpoint $Checkpoint --steps 650 --headless
-& $IsaacPython .\fr5_rl_development\run.py train --num_envs 128 --max_iterations 2000 --headless --checkpoint $Checkpoint
+
+& $IsaacPython .\run.py play --num_envs 4 --checkpoint $Checkpoint
+& $IsaacPython .\run.py play --num_envs 4 --checkpoint $Checkpoint --steps 650 --headless
+& $IsaacPython .\run.py train --num_envs 128 --max_iterations 2000 --headless --checkpoint $Checkpoint
 ```
 
-Use absolute checkpoint paths, as in the example above. The launcher changes its
-working directory to `fr5_rl_development/` to keep outputs together. On resume,
-iteration accounting follows the installed RSL-RL backend; inspect the run log.
-Earlier custom-arm checkpoints are incompatible with the FR5 task.
+Resume iteration accounting follows the installed RSL-RL backend; inspect the
+training log to determine actual progress. Checkpoints produced by a different
+robot or observation/action configuration are not compatible.
 
 ### Evaluate completed episodes
 
 ```powershell
-& $IsaacPython .\fr5_rl_development\evaluate.py --checkpoint $Checkpoint --episodes 32 --num_envs 8 --seed 123 --viz none
+& $IsaacPython .\evaluate.py --checkpoint $Checkpoint --episodes 32 --num_envs 8 --seed 123 --viz none
 ```
 
-The report in `fr5_rl_development/evaluation/latest.json` records successes,
-success rate, drops, timeouts, the seed, and the checkpoint path. Evaluate multiple
-seeds after sufficient training. Reward growth alone does not establish success.
-To inspect training metrics with TensorBoard, if available in the environment:
+The report at `evaluation/latest.json` records successes, success rate, drops,
+timeouts, seed, and checkpoint path. Evaluate multiple seeds after sufficient
+training. Reward growth alone does not establish task success.
+
+If TensorBoard is available in the environment:
 
 ```powershell
-& $IsaacPython -m tensorboard.main --logdir .\fr5_rl_development\logs\rsl_rl\fr5_pick_place
+& $IsaacPython -m tensorboard.main --logdir .\logs\rsl_rl\fr5_pick_place
 ```
 
-See [the training guide](fr5_rl_development/TRAINING.md) for task details and checks.
+See [TRAINING.md](TRAINING.md) for the detailed task and training notes.
 
 ## Configuration and CLI reference
 
-### Entry points and CLI
-
-Run commands from the repository root with the configured Isaac Lab interpreter.
-The FR5 launcher forwards backend options to the installed Isaac Lab entrypoints.
-Defaults below come from this repository's launcher and task configuration.
+### Entry points and options
 
 | Entry point / option | Default | Meaning and constraints |
 | --- | --- | --- |
-| `run.py check` | Both FR5 task registrations | Configuration and main asset-path check; does not launch simulation; accepts no extra options. |
-| `run.py train --num_envs` | `128` | Parallel environments in the training scene. Start smaller for a pipeline check. |
-| `run.py play --num_envs` | `4` | Parallel environments in the playback scene. |
-| `--max_iterations` | `5000` in PPO configuration | Training update count passed to the backend; inspect iteration logs when resuming. |
-| `--headless` | Off | Selects `--viz none`; cannot be combined with `--viz` / `--visualizer`. |
-| `--viz` | `kit` for FR5 train/play | Use `kit` for a viewer or `none` without one. |
-| `--checkpoint` | No bundled checkpoint | `latest` is resolved by the play launcher; an absolute model path selects a specific model. |
-| `--steps` | Unbounded interactive playback | Positive integer; valid only for `play`. |
-| PPO `seed` | `42` | Default in `ppo_cfg.py`. |
-| `evaluate.py --checkpoint` | Required | Existing learned FR5 checkpoint path; use an absolute path. |
-| `evaluate.py --episodes` | `32` | Positive completed-episode count. |
-| `evaluate.py --num_envs` | `8` | Positive parallel-environment count for evaluation. |
-| `evaluate.py --seed` | `123` | Evaluation seed; use multiple seeds for policy assessment. |
+| `run.py check` | Both FR5 task registrations | Validates configuration and the main asset path without launching simulation; accepts no additional options. |
+| `run.py train --num_envs` | `128` from the scene configuration | Number of parallel training environments. Start smaller for a smoke test. |
+| `run.py play --num_envs` | `4` from the play configuration | Number of parallel playback environments. |
+| `--max_iterations` | `5000` in `ppo_cfg.py` | PPO update count passed to the training backend. |
+| `--headless` | Off | Selects `--viz none`; cannot be combined with an explicit visualizer option. |
+| `--viz` | `kit` for train/play | Use `kit` for a viewer or `none` without one. |
+| `--checkpoint` | No bundled converged checkpoint | `latest` resolves the newest FR5 model; an absolute path selects a specific model. |
+| `--steps` | Unbounded playback | Positive integer available only in `play` mode. |
+| PPO `seed` | `42` | Training seed configured in `ppo_cfg.py`. |
+| `evaluate.py --checkpoint` | Required | Path to an existing FR5 checkpoint. |
+| `evaluate.py --episodes` | `32` | Number of completed episodes to evaluate. |
+| `evaluate.py --num_envs` | `8` | Parallel environments used during evaluation. |
+| `evaluate.py --seed` | `123` | Evaluation seed. |
 
 ### Configuration files
 
-| File | What to change |
+| File | Purpose |
 | --- | --- |
-| [constants.py](fr5_rl_development/fr5_pick_place/constants.py) | Cube dimensions/mass, workspace, pick/goal regions, TCP offset, home pose, action step, lift/hold thresholds. |
-| [env_cfg.py](fr5_rl_development/fr5_pick_place/env_cfg.py) | Scene, rewards, resets, observations, terminations, timestep, environment count, task-specific drive overrides. |
-| [ppo_cfg.py](fr5_rl_development/fr5_pick_place/ppo_cfg.py) | Actor/critic MLPs, rollout length, learning rate, seed, save interval, and experiment name. |
-| [fr5_cfg.py](fr5_preparation/package/fr5_cfg.py) | Robot USD path, base articulation, finger targets, and actuator properties. |
-| [parameters.json](fr5_preparation/package/parameters.json) | Prepared asset parameter estimates and their derivation. |
+| [`fr5_pick_place/constants.py`](fr5_pick_place/constants.py) | Cube properties, workspace, regions, TCP offset, home pose, action step, and lift/hold thresholds. |
+| [`fr5_pick_place/env_cfg.py`](fr5_pick_place/env_cfg.py) | Scene, actions, observations, rewards, resets, terminations, timestep, and environment count. |
+| [`fr5_pick_place/ppo_cfg.py`](fr5_pick_place/ppo_cfg.py) | Actor/critic networks, rollout length, learning rate, seed, save interval, and experiment name. |
+| [`fr5_cfg.py`](fr5_cfg.py) | Robot USD path, articulation setup, finger targets, and actuator properties. |
+| [`parameters.json`](parameters.json) | Prepared asset parameters and estimation method. |
 
-PPO uses 32 rollout steps per environment, a `3e-4` learning rate, a 100-iteration
-save interval, and actor/critic MLPs of 256–128–64 with observation normalization.
-Keep trained checkpoints paired with the task's observation/action configuration.
+PPO uses 32 rollout steps per environment, a `3e-4` learning rate, a
+100-iteration save interval, and actor/critic MLPs with hidden layers
+256–128–64 and observation normalization.
 
 ## Task specification
 
@@ -314,12 +293,12 @@ Keep trained checkpoints paired with the task's observation/action configuration
 | Training task ID | `Isaac-FR5-PickPlace-v0` |
 | Playback task ID | `Isaac-FR5-PickPlace-Play-v0` |
 | Object | 30 mm cube, 30 g |
-| Table surface / robot base height | 0.10 m |
-| Pick / target region centers | Approximately x = -0.45 m, y = -0.12 / +0.12 m |
-| Reset randomization | x ±0.04 m and y ±0.02 m within the separate regions |
-| Actions | TCP delta x/y/z (up to 6 mm per step), binary gripper |
-| Gripper | Both fingers: open 0 m; close 0.04 m |
-| End-effector orientation | Downward, fixed yaw of 90 degrees |
+| Table surface / robot base height | 0.10 m / 0.10 m |
+| Pick / target centers | Approximately x = -0.45 m, y = -0.12 m / +0.12 m |
+| Reset randomization | x ±0.04 m and y ±0.02 m in separate regions |
+| Actions | TCP delta x/y/z up to 6 mm per control step, plus binary gripper |
+| Gripper targets | Both fingers: open = 0 m; closed = 0.04 m |
+| End-effector orientation | Fixed downward orientation with 90° yaw |
 | Control / physics frequency | 50 Hz / 200 Hz |
 | Maximum episode duration | 12 seconds |
 | Policy input | Simulation state; no camera observations |
@@ -329,160 +308,129 @@ Success requires the cube to have been lifted at least 45 mm above its resting
 height while near the closed gripper, then placed within 20 mm in XY and 8 mm in
 height of the target. Cube speed must be below 0.06 m/s, both fingers must be open
 below 4 mm, and the TCP must withdraw more than 55 mm. Placement conditions must
-hold for 0.30 seconds. Pushing a cube directly to the target does not count.
-Coordinates are local to each replicated environment; code quaternions use
-`(x, y, z, w)` in this checkout.
+hold continuously for 0.30 seconds. Pushing the cube across the table does not
+count as success. Coordinates are local to each replicated environment; code
+quaternions use `(x, y, z, w)`.
 
 ## Repository structure
 
 ```text
-pick_and_place/
+fr5_arm/
 ├── README.md
-├── THIRD_PARTY_NOTICES.md        # Upstream authors, sources, and licensing scope
-├── CONTRIBUTING.md
-├── .gitignore                   # Excludes logs, checkpoints, caches, local settings
-├── .gitattributes               # Git LFS rules for USD and mesh assets
-├── licenses/                    # Preserved upstream license texts
-├── docs/archive/                # Previous Vietnamese documentation, unchanged
-├── fr5_rl_development/          # Main FR5 reinforcement-learning workflow
-│   ├── run.py                   # check / train / play; resolves prepared assets
-│   ├── demo.py                  # Scripted physical pick/place demonstration
-│   ├── evaluate.py              # Evaluate a learned policy over complete episodes
-│   ├── TRAINING.md              # Detailed FR5 training guide
-│   ├── fr5_pick_place/
-│   │   ├── __init__.py          # Gymnasium task registrations
-│   │   ├── constants.py         # Geometry, workspace, poses, success thresholds
-│   │   ├── env_cfg.py           # Scene, observations, rewards, resets, terminations
-│   │   ├── actions_cfg.py
-│   │   ├── actions.py           # Cartesian target integration and differential IK
-│   │   ├── mdp.py               # Tensor-based task observations and rewards
-│   │   ├── task_logic.py        # Episode history and placement conditions
-│   │   └── ppo_cfg.py           # PPO actor/critic and runner settings
-│   └── tests/                  # Logic tests and simulation diagnostics
-├── fr5_preparation/
-│   ├── build_fr5.py             # Historical preparation utility
-│   └── package/
-│       ├── README.md           # Asset parameters and validation guide
-│       ├── fr5_cfg.py          # Shared FR5 articulation configuration
-│       ├── fr5_description/    # URDF, USD layers, and meshes; keep together
-│       ├── parameters.json     # Mass/inertia estimation records
-│       ├── source_manifest.json # SHA-256 hashes of original source inputs
-│       ├── validate_asset.py
-│       ├── gripper_scene.py
-│       ├── check_contact.py
-│       ├── tools/build_fr5.py
-│       └── verification/       # Retained asset verification records
-├── run.py                      # Earlier custom-arm launcher, not the FR5 launcher
-├── lift_place_env_cfg.py        # Earlier custom-arm scene/task
-├── custom_arm/                 # Earlier robot assets and agent configurations
-├── cumotion_arm_description/    # Original custom-arm ROS description
-├── cube_5cm/                    # Cube asset for the earlier baseline
-├── mdp/                        # Earlier custom-arm task functions
-├── check_gripper.py
-├── gripper_scene.py
-├── tests/                      # Earlier gripper/playback checks
-└── how_to_run.txt               # Short command reference
+├── TRAINING.md                  # Detailed training and evaluation guide
+├── run.py                       # check / train / play launcher
+├── demo.py                      # Scripted physical pick-and-place validation
+├── evaluate.py                  # Learned-policy episode evaluation
+├── fr5_cfg.py                   # FR5 articulation configuration
+├── parameters.json              # Asset parameter estimates and provenance
+├── source_manifest.json         # SHA-256 hashes of source asset files
+├── validate_asset.py            # Static asset and dependency validation
+├── gripper_scene.py             # Standalone gripper motion check
+├── check_contact.py             # Gripper contact check
+├── docs/images/                 # README media
+├── fr5_description/             # URDF, composed USD layers, and meshes
+├── fr5_pick_place/
+│   ├── __init__.py              # Gymnasium task registrations
+│   ├── constants.py             # Geometry, workspace, poses, and thresholds
+│   ├── env_cfg.py               # Scene, MDP terms, timing, and task setup
+│   ├── actions_cfg.py           # Cartesian action configuration
+│   ├── actions.py               # Cartesian target integration and IK
+│   ├── mdp.py                   # Tensor-based task observations and rewards
+│   ├── task_logic.py            # Episode history and placement conditions
+│   └── ppo_cfg.py               # PPO runner, networks, and algorithm settings
+├── tests/
+│   ├── test_task_logic.py       # Reward/success and partial-reset regressions
+│   └── smoke_env.py             # Full environment timeout/reset smoke test
+├── verification/                # Retained asset, demo, and pipeline records
+├── logs/                        # Generated training logs/checkpoints; ignored
+└── evaluation/                  # Generated policy evaluation reports; ignored
 ```
-
-Generated FR5 runs are saved under `fr5_rl_development/logs/rsl_rl/fr5_pick_place/`;
-evaluation JSON goes to `fr5_rl_development/evaluation/`. Both are ignored by Git.
-The FR5 cube is generated in code and does not use the baseline's `cube_5cm` asset.
 
 ## Validation
 
-Configuration loading for both FR5 tasks and both baseline tasks, all three FR5
-logic tests, and static FR5 asset validation passed during repository preparation
-on **21 October 2026**. Static validation found no unresolved asset dependencies.
-These results cover configuration and logic; they do not measure learned-policy
-performance.
+The retained records report the following checks from **21 October 2026**:
 
-Run these checks with the same interpreter:
+- Both train and play configurations loaded successfully.
+- Six task-logic regression tests are currently present; the retained summary
+  records three passing tests from the validation run made at that time.
+- The scripted seed-42 demonstration completed physical pick-and-place in 4/4
+  environments without attaching or teleporting the cube during the sequence.
+- The full environment ran for 650 steps across four environments with finite
+  observations and rewards, a 47-element observation, and four actions.
+- A two-update PPO smoke run produced `model_0.pt` and `model_1.pt`; bounded
+  playback loaded the latest checkpoint and ran for 650 steps.
+- The smoke checkpoint evaluation completed 2 episodes with 0 successes and
+  2 timeouts. It is not a trained solution.
 
-```powershell
-& $IsaacPython -m unittest discover -s .\fr5_rl_development\tests -p "test_*.py"
-& $IsaacPython .\fr5_rl_development\tests\smoke_env.py --viz none
-& $IsaacPython .\fr5_rl_development\demo.py --viz none --num_envs 4 --seed 42
-& $IsaacPython .\fr5_preparation\package\gripper_scene.py --viz none --cycles 2
-& $IsaacPython .\fr5_preparation\package\gripper_scene.py --viz none --cycles 2 --gravity
-& $IsaacPython .\fr5_preparation\package\check_contact.py --viz none
-```
-
-Retained asset records are in `fr5_preparation/package/verification/`. Simulation
-checks generate additional records under their respective project directories.
-
-Earlier local documentation dated 21 October 2026 reports three passing logic
-tests, a 4/4 scripted demonstration, a 650-step environment check, and a two-update
-PPO smoke run. The smoke policy achieved **0/2 successful evaluation episodes**.
-Those training records came from the earlier standalone development layout and
-are not all included here; see [the archived report](docs/archive/TRAINING.original.vi.md).
-Treat these as historical results rather than evidence of a fresh-clone benchmark.
-
-The asset has estimated mass/inertia and drive settings, and self-collision is
-disabled. Neither real-robot calibration nor sim-to-real deployment is established.
-
-## Original custom-arm baseline
-
-The root launcher still runs the earlier custom arm:
+Run the available checks with the same Isaac Lab interpreter:
 
 ```powershell
-& $IsaacPython .\run.py check
-& $IsaacPython .\run.py train --num_envs 8 --max_iterations 2 --headless
-& $IsaacPython .\gripper_scene.py --viz kit --cycles 2
-& $IsaacPython .\check_gripper.py --viz none
+& $IsaacPython -m unittest discover -s .\tests -p "test_*.py"
+& $IsaacPython .\tests\smoke_env.py --viz none
+& $IsaacPython .\demo.py --viz none --num_envs 4 --seed 42
+& $IsaacPython .\validate_asset.py
+& $IsaacPython .\gripper_scene.py --viz none --cycles 2
+& $IsaacPython .\gripper_scene.py --viz none --cycles 2 --gravity
+& $IsaacPython .\check_contact.py --viz none
 ```
 
-Its task is `Isaac-Lift-Cube-Place-Custom-Arm-v0`; logs use
-`logs/rsl_rl/franka_lift_place_custom_arm/`. This historical experiment name does
-not refer to the FR5. Playback requires a separately obtained compatible checkpoint.
-`tests/smoke_play.py` expects a historical checkpoint under the root `logs/` folder;
-it cannot run from a clean clone without that file.
+Detailed retained results are under `verification/`, including
+`training_checks.json`, `scripted_pick_place_seed42.json`, `environment.json`,
+`static.json`, `motion.json`, `motion_gravity.json`, and `contact.json`.
 
-The baseline gripper uses `cumotion_arm_gripper_fixed.usda` with limits [-60, 0]
-degrees: -60 closes and 0 opens. Earlier checkpoints predate a gripper direction
-fix and do not establish successful grasping. See the unchanged
-[original README](docs/archive/README.original.vi.md) for the diagnosis and earlier
-validation history; its machine-specific paths and checkpoint references are historical.
+## Asset preparation and limitations
+
+The asset source was copied from
+[WangZY233/FR5_Reinforcement-learning](https://github.com/WangZY233/FR5_Reinforcement-learning).
+Only the `fr5_withgripper` variant and required meshes are retained.
+
+The prepared asset includes relative mesh paths, portable preview materials,
+mesh-derived center-of-mass and inertia estimates, two-finger drives, mesh-based
+gripper collision, and authored Isaac Lab actuator settings. The main simulation
+layer is `fr5_description/urdf/fr5_withgripper/fr5_arm.usda`; the underlying
+`fr5_withgripper.usd` alone does not include every override.
+
+Important limitations:
+
+- Masses for the seven arm links use the nominal FR5 V6 values referenced from
+  FAIRINO's official URDF, but geometry in this project differs from that model.
+- Centers of mass and inertia tensors are uniform convex-hull estimates, not CAD
+  or measured values. Total assigned mass is approximately 24.062 kg.
+- Gripper mass, friction, drive gains, and collision decomposition are simulation
+  starting points and have not been calibrated against hardware.
+- Self-collision remains disabled. Collision pairs must be reviewed before it is
+  enabled.
+- The task uses fixed downward grasp orientation and state observations. It does
+  not establish perception performance, arbitrary-object manipulation, or
+  real-world safety.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| `No module named isaaclab` or `isaaclab_physx` | Use the configured Isaac Lab interpreter and a compatible checkout. |
-| `No module named fr5_cfg` | Use the FR5 launcher in this repository and keep `fr5_preparation/package/` beside `fr5_rl_development/`. |
-| Asset does not open or dependencies are missing | Run `git lfs pull`; retain USD layers, meshes, and textures together; run `validate_asset.py`. |
-| `--checkpoint latest` finds nothing | Train first; checkpoints and local logs are excluded from Git. |
-| Playback fails to load a model | Use an FR5 checkpoint with the matching observation/action configuration. |
+| `No module named isaaclab` or `isaaclab_physx` | Run the command with the Python interpreter from the compatible Isaac Lab environment. |
+| `No module named fr5_cfg` | Run from the repository root and keep `fr5_cfg.py`, `fr5_pick_place/`, and `fr5_description/` together. |
+| Asset does not open or reports unresolved dependencies | Keep all USD layers and mesh directories together, then run `validate_asset.py`. |
+| `--checkpoint latest` finds nothing | Run training first; generated logs and checkpoints are excluded by `.gitignore`. |
+| Playback cannot load a model | Use a checkpoint trained with this FR5 task and the same observation/action configuration. |
 | GPU memory exhaustion | Reduce `--num_envs` and close other GPU workloads. |
-| First launch takes a long time | Initial runtime setup may load extensions/assets and compile GPU kernels. |
-| Cache/config write errors | Run from a normal PowerShell session with writable simulator cache/config directories. |
-| Older tutorial commands fail | This launcher uses the installed entrypoint API; use the commands above instead of copying old Isaac Lab script paths. |
-
-## Publishing and contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution checks and Git LFS
-handling. Source, robot assets, provenance records, and documentation belong in
-Git; logs, checkpoints, exported policies, and local environment settings are
-excluded by [.gitignore](.gitignore). Large USD and mesh files use the LFS rules in
-[.gitattributes](.gitattributes).
+| The first simulation launch is slow | Isaac Sim may need to load extensions, build caches, and compile GPU kernels. |
+| A smoke checkpoint does not pick up the cube | Expected: the two-update run validates the pipeline and is not long enough to learn the task. |
 
 ## Acknowledgements
 
-- **Wang Ziyuan / WangZY233** — original FR5 robot-description source:
+- **Wang Ziyuan / WangZY233** — original FR5 description source:
   [FR5_Reinforcement-learning](https://github.com/WangZY233/FR5_Reinforcement-learning).
-- **Robot Mania** — named maintainer of the retained custom-arm description.
-  Original pick-and-place tutorial, identified by the repository maintainer:
-  [YouTube tutorial](https://www.youtube.com/watch?v=IGVywY_FI3c).
-- **The Isaac Lab Project Developers** — [Isaac Lab](https://github.com/isaac-sim/IsaacLab)
-  and existing task foundations; original source headers are preserved.
-- **FAIRINO / FAIR-INNOVATION** — nominal arm mass reference from the
+- **The Isaac Lab Project Developers** —
+  [Isaac Lab](https://github.com/isaac-sim/IsaacLab), simulation framework,
+  training entrypoints, and task foundations.
+- **FAIRINO / FAIR-INNOVATION** — nominal link-mass reference from the
   [official FR5 V6 URDF](https://github.com/FAIR-INNOVATION/frcobot_ros2/blob/main/fairino_description/urdf/fairino5_v6.urdf).
-
-Full source and modification notes are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-This repository contains material from multiple sources. Applicable upstream
-licenses and notices are preserved in [licenses/](licenses/) and existing file
-headers. No blanket license has been assigned to the entire repository or to new
-maintainer contributions. See [licensing scope](THIRD_PARTY_NOTICES.md#licensing-scope)
-for the remaining provenance and licensing details.
+No repository-wide license file is currently present. Upstream source headers and
+notices continue to apply to their respective files. Before redistribution or
+public release, review the licensing terms of the retained robot descriptions,
+meshes, and third-party framework components and add explicit licensing for new
+project contributions.

@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "steps": 650,
+  "num_envs": 4,
+  "action_dim": 4,
+  "observation_dim": 47,
+  "resets": 4
+}
