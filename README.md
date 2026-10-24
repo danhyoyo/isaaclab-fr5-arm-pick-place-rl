@@ -17,9 +17,10 @@
 
 </div>
 
-This standalone project integrates a **FAIRINO FR5 six-axis arm and two-finger
-parallel gripper** with NVIDIA Isaac Lab, PhysX, and PPO through RSL-RL. It
-includes prepared robot assets, Cartesian end-effector control, an FR5-specific
+This standalone project integrates a **FAIRINO FR5 six-axis arm with 6 degrees
+of freedom (6-DOF) and a two-finger parallel gripper** with NVIDIA Isaac Lab,
+PhysX, and PPO through RSL-RL. It includes prepared robot assets, Cartesian
+end-effector control, an FR5-specific
 pick-and-place task, scripted validation, training, playback, and evaluation.
 
 > **Status:** the simulation, task, and training pipeline are implemented. No
