@@ -23,11 +23,6 @@ PhysX, and PPO through RSL-RL. It includes prepared robot assets, Cartesian
 end-effector control, an FR5-specific
 pick-and-place task, scripted validation, training, playback, and evaluation.
 
-> **Status:** the simulation, task, and training pipeline are implemented. No
-> converged FR5 checkpoint is included. The retained two-iteration PPO smoke
-> checkpoint achieved 0/2 successful evaluation episodes and is only evidence
-> that the pipeline runs. Dynamics are simulation estimates; real-robot
-> deployment has not been validated.
 
 ---
 
