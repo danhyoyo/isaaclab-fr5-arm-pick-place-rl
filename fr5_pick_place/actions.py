@@ -13,6 +13,7 @@ class CartesianDeltaAction(DifferentialInverseKinematicsAction):
     """
 
     def __init__(self, cfg, env):
+        """Initialize the parent IK action and per-environment TCP state."""
         # Let the Isaac Lab parent create the action buffers and IK controller.
         super().__init__(cfg, env)
 
@@ -26,12 +27,14 @@ class CartesianDeltaAction(DifferentialInverseKinematicsAction):
 
     @property
     def action_dim(self):
+        """Return the three Cartesian position actions consumed by this term."""
         # This action term consumes only the three Cartesian position values.
         # The gripper is configured as a separate action term.
         return 3
 
     @property
     def target_position(self):
+        """Return each environment's persistent TCP target position."""
         # Read the current controlled frame pose.  Before the first action of an
         # episode, use that pose as the initial target; afterwards return the
         # integrated target stored above.
@@ -39,6 +42,7 @@ class CartesianDeltaAction(DifferentialInverseKinematicsAction):
         return torch.where(self._needs_initialization[:, None], pos, self._target_position)
 
     def reset(self, env_ids=None):
+        """Reset the parent controller and reinitialize selected TCP targets."""
         # Reset the parent action/controller for all environments or only the
         # subset whose episode ended.
         super().reset(env_ids)
@@ -48,6 +52,7 @@ class CartesianDeltaAction(DifferentialInverseKinematicsAction):
         self._needs_initialization[env_ids if env_ids is not None else slice(None)] = True
 
     def process_actions(self, actions):
+        """Convert normalized Cartesian deltas into a bounded pose IK command."""
         # Keep the raw policy output for logging/observations.
         self._raw_actions[:] = actions
 
