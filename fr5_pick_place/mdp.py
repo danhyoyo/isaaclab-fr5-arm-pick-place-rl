@@ -2,9 +2,12 @@
 import torch
 from isaaclab.envs.mdp import *  # Standard action-rate, observation, and timeout helpers.
 from isaaclab.utils.math import quat_apply
-from .constants import (TCP_OFFSET, REST_HEIGHT, GOAL_MARKER_Z, LIFT_HEIGHT, SUCCESS_HOLD_SECONDS,
-                        PICK_CENTER, GOAL_CENTER, TABLE_TOP)
-from .task_logic import EpisodeProgress, placement_candidate, staged_rewards
+from .constants import (TCP_OFFSET, REST_HEIGHT, GOAL_MARKER_Z, LIFT_HEIGHT, RELEASE_XY_TOL,
+                        RELEASE_Z_TOL, LOWER_XY_ENTRY_TOL, CONTROLLED_LOWER_MAX_SPEED,
+                        CONTROLLED_PLACE_MAX_SPEED, SUCCESS_HOLD_SECONDS, PICK_CENTER,
+                        GOAL_CENTER, TABLE_TOP)
+from .task_logic import (EpisodeProgress, completed_placement_candidate,
+                         controlled_placement_candidate, staged_rewards)
 
 
 def progress(env):
@@ -39,9 +42,60 @@ def state(env):
     tcp, quat, pos, goal, fingers, velocity = geometry(env)
     memory = progress(env)
     distance = torch.linalg.vector_norm(tcp - pos, dim=-1)
-    lifting = ((pos[:, 2] > LIFT_HEIGHT) & (distance < 0.045) & (fingers.mean(-1) > 0.012))
+    closed = fingers.mean(-1) > 0.012
+    grasping = (distance < 0.025) & closed
+    lifting = ((pos[:, 2] > LIFT_HEIGHT) & (distance < 0.045) & closed)
+    lifted_now = memory.lifted | lifting
+    xy_goal = torch.linalg.vector_norm(pos[:, :2] - goal[:, :2], dim=-1)
+    object_speed = torch.linalg.vector_norm(velocity, dim=-1)
+    release_zone_now = (lifted_now & (xy_goal < RELEASE_XY_TOL)
+                        & ((pos[:, 2] - goal[:, 2]).abs() < RELEASE_Z_TOL))
+    # Placement is latched only while the gripper still controls a slow object.
+    # A thrown object merely passing through the release zone cannot earn it.
+    placement_now = controlled_placement_candidate(
+        lifted_now, pos, goal, velocity, fingers, distance,
+        RELEASE_XY_TOL, RELEASE_Z_TOL, CONTROLLED_PLACE_MAX_SPEED)
+    open_now = fingers.abs().amax(dim=-1) < 0.004
+    opening = ((0.012 - fingers.abs().mean(-1)) / 0.012).clamp(0, 1)
+    controlled_hold = closed & (distance < 0.045)
+    held = controlled_hold & (pos[:, 2] > REST_HEIGHT + 0.020)
+    near_goal = xy_goal < LOWER_XY_ENTRY_TOL
+    goal_progress = 1 - torch.tanh(xy_goal / 0.12)
+    reach_progress = 1 - torch.tanh(distance / 0.10)
+    height_progress = ((pos[:, 2] - REST_HEIGHT) / 0.045).clamp(0, 1)
+    # First refine XY from the entry radius to the release radius.  Only after
+    # XY is inside the release radius does vertical descent earn progress.
+    lower_xy_progress = ((LOWER_XY_ENTRY_TOL - xy_goal)
+                         / (LOWER_XY_ENTRY_TOL - RELEASE_XY_TOL)).clamp(0, 1)
+    descent_range = max(LIFT_HEIGHT - REST_HEIGHT, 1.0e-6)
+    lower_z_progress = (1.0 - (pos[:, 2] - REST_HEIGHT).abs() / descent_range).clamp(0, 1)
+    placed_now_or_before = memory.placed | placement_now
+    release_now = (placed_now_or_before & release_zone_now & open_now
+                   & (object_speed < CONTROLLED_PLACE_MAX_SPEED))
+    released_now = memory.released | release_now
     memory.update(env.common_step_counter, env.step_dt, lifting,
-                  lambda lifted: placement_candidate(lifted, pos, goal, velocity, fingers, distance))
+                  lambda lifted: completed_placement_candidate(
+                      memory.placed, memory.released, lifted, pos, goal, velocity,
+                      fingers, distance),
+                   grasping_now=grasping, placement_now=placement_now,
+                   release_now=release_now, opening=opening,
+                   reach_score=reach_progress, reach_active=~memory.grasped,
+                   lift_score=height_progress,
+                   lift_active=(memory.grasped | grasping) & closed & (distance < 0.045) & ~memory.lifted,
+                   transport_score=goal_progress,
+                   transport_active=lifted_now & held & ~near_goal,
+                   lower_xy_score=lower_xy_progress,
+                   lower_xy_active=(lifted_now & near_goal & ~memory.placed & controlled_hold
+                                    & (object_speed < CONTROLLED_LOWER_MAX_SPEED)),
+                   lower_z_score=lower_z_progress,
+                   lower_z_active=(lifted_now & (xy_goal < RELEASE_XY_TOL) & ~memory.placed
+                                   & controlled_hold
+                                   & (object_speed < CONTROLLED_LOWER_MAX_SPEED)),
+                   opening_active=(placed_now_or_before & release_zone_now & ~memory.released
+                                   & (object_speed < CONTROLLED_PLACE_MAX_SPEED)),
+                   withdraw_score=(distance / 0.10).clamp(0, 1),
+                   withdraw_active=(released_now & release_zone_now & open_now
+                                    & (object_speed < CONTROLLED_PLACE_MAX_SPEED)))
     env.fr5_state_cache = (tcp, quat, pos, goal, fingers, velocity, distance, memory)
     env.fr5_state_stamp = stamp
     return env.fr5_state_cache
@@ -53,14 +107,25 @@ def task_observation(env):
     current_b, _ = arm._compute_frame_pose()
     command_error = arm.target_position - current_b
     return torch.cat([tcp, quat, pos, goal, pos - tcp, goal - pos, velocity, command_error,
-                      memory.lifted[:, None].float(), (memory.hold / SUCCESS_HOLD_SECONDS).clamp(0, 1)[:, None]], -1)
+                      memory.lifted[:, None].float(), memory.placed[:, None].float()], -1)
 
 
 def task_reward(env, stage: str):
     tcp, quat, pos, goal, fingers, velocity, distance, memory = state(env)
     if stage == "success":
         return (memory.hold >= SUCCESS_HOLD_SECONDS).float()
-    rewards = staged_rewards(pos, goal, fingers, distance, memory.lifted, REST_HEIGHT)
+    if stage == "time":
+        return torch.ones(env.num_envs, device=env.device)
+    rewards = staged_rewards(pos, goal, fingers, distance, memory.lifted, REST_HEIGHT,
+                             memory.placed, memory.released, memory.just_grasped,
+                             memory.just_lifted, memory.just_placed, memory.just_released,
+                             reach_gain=memory.reach_gain, lift_gain=memory.lift_gain,
+                             transport_gain=memory.transport_gain,
+                             lower_xy_gain=memory.lower_xy_gain,
+                             lower_z_gain=memory.lower_z_gain,
+                             opening_gain=memory.opening_gain,
+                             withdraw_gain=memory.withdraw_gain, step_dt=env.step_dt,
+                             release_xy_tol=RELEASE_XY_TOL, release_z_tol=RELEASE_Z_TOL)
     try:
         return rewards[stage]
     except KeyError as exc:

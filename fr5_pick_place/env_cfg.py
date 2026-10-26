@@ -98,6 +98,7 @@ class RewardsCfg:
     release = Reward(func=mdp.task_reward, params={"stage": "release"}, weight=10.0)
     withdraw = Reward(func=mdp.task_reward, params={"stage": "withdraw"}, weight=10.0)
     success = Reward(func=mdp.task_reward, params={"stage": "success"}, weight=5000.0)
+    time_penalty = Reward(func=mdp.task_reward, params={"stage": "time"}, weight=-0.25)
     action_rate = Reward(func=mdp.action_rate_l2, weight=-0.005)
     joint_velocity = Reward(func=mdp.joint_vel_l2, weight=-0.0001)
 
