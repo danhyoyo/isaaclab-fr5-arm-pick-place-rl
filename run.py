@@ -40,11 +40,30 @@ def main():
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["check", "train", "play"])
+    # Keep help under our control so ``train --help`` and ``play --help`` can
+    # reach the selected Isaac Lab backend instead of stopping at this wrapper.
+    parser = argparse.ArgumentParser(description=__doc__, add_help=False)
+    parser.add_argument("-h", "--help", action="store_true",
+                        help="Show launcher help, or mode-specific backend help.")
+    parser.add_argument("mode", nargs="?", choices=["check", "train", "play"])
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--steps", type=int, help="Optional bounded playback (play mode only).")
     args, remaining = parser.parse_known_args()
+    if args.mode is None:
+        if args.help:
+            parser.print_help()
+            return 0
+        parser.error("the following arguments are required: mode")
+    if args.help:
+        if args.mode in ("train", "play"):
+            wrapper_options = "--headless"
+            if args.mode == "play":
+                wrapper_options += ", --steps STEPS"
+            print(f"run.py wrapper options: {wrapper_options}\n", flush=True)
+            remaining.insert(0, "--help")
+        else:
+            parser.print_help()
+            return 0
     if args.steps is not None and (args.mode != "play" or args.steps < 1):
         parser.error("--steps must be positive and is available only in play mode")
     import warp as wp

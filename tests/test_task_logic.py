@@ -93,19 +93,51 @@ class TaskLogicTest(unittest.TestCase):
         at_100_hz = staged_rewards(step_dt=0.01, **common)["lower"] * 0.01
         self.assertTrue(torch.allclose(at_50_hz, at_100_hz))
 
-    def test_xy_regression_does_not_cancel_new_vertical_progress(self):
+    def test_vertical_progress_uses_entry_height_as_zero_reward_baseline(self):
         memory = EpisodeProgress(1, "cpu")
         false = torch.tensor([False])
         true = torch.tensor([True])
         candidate = lambda lifted: false
         memory.update(1, 0.02, false, candidate,
                       lower_xy_score=torch.tensor([1.0]), lower_xy_active=true,
-                      lower_z_score=torch.tensor([0.2]), lower_z_active=true)
+                      lower_z_error=torch.tensor([0.100]), lower_z_active=true,
+                      lower_z_target_error=0.012)
+        self.assertEqual(memory.lower_z_gain.item(), 0.0)
+        self.assertAlmostEqual(memory.lower_z_start_error.item(), 0.100)
         memory.update(2, 0.02, false, candidate,
                       lower_xy_score=torch.tensor([0.8]), lower_xy_active=true,
-                      lower_z_score=torch.tensor([0.3]), lower_z_active=true)
+                      lower_z_error=torch.tensor([0.080]), lower_z_active=true,
+                      lower_z_target_error=0.012)
         self.assertEqual(memory.lower_xy_gain.item(), 0.0)
-        self.assertAlmostEqual(memory.lower_z_gain.item(), 0.1, places=6)
+        self.assertAlmostEqual(memory.lower_z_gain.item(), 0.020 / 0.088, places=6)
+
+    def test_vertical_motion_cannot_replay_previous_progress(self):
+        memory = EpisodeProgress(1, "cpu")
+        false = torch.tensor([False])
+        true = torch.tensor([True])
+        candidate = lambda lifted: false
+        for step, error in enumerate([0.100, 0.080, 0.090], start=1):
+            memory.update(step, 0.02, false, candidate,
+                          lower_z_error=torch.tensor([error]), lower_z_active=true,
+                          lower_z_target_error=0.012)
+        self.assertEqual(memory.lower_z_gain.item(), 0.0)
+        memory.update(4, 0.02, false, candidate,
+                      lower_z_error=torch.tensor([0.070]), lower_z_active=true,
+                      lower_z_target_error=0.012)
+        self.assertAlmostEqual(memory.lower_z_gain.item(), 0.010 / 0.088, places=6)
+
+    def test_entering_inside_target_height_cannot_create_full_descent_bonus(self):
+        memory = EpisodeProgress(1, "cpu")
+        false = torch.tensor([False])
+        true = torch.tensor([True])
+        candidate = lambda lifted: false
+        memory.update(1, 0.02, false, candidate,
+                      lower_z_error=torch.tensor([0.010]), lower_z_active=true,
+                      lower_z_target_error=0.012)
+        memory.update(2, 0.02, false, candidate,
+                      lower_z_error=torch.tensor([0.009]), lower_z_active=true,
+                      lower_z_target_error=0.012)
+        self.assertEqual(memory.lower_z_gain.item(), 0.0)
 
     def test_release_reward_requires_lift_and_placement(self):
         pos = torch.tensor([[0.0, 0.0, 0.115]]).repeat(3, 1)

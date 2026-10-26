@@ -86,14 +86,21 @@ iteration trong log để xác định tiến độ thực tế.
 - Điều khiển 50 Hz, vật lý 200 Hz; episode tối đa 12 giây.
 - PPO: MLP actor/critic 256–128–64, chuẩn hóa observation, 32 bước rollout/môi trường.
 - Quan sát dùng trạng thái mô phỏng: khớp, vị trí/hướng đầu kẹp, hộp, đích,
-  vận tốc hộp, sai lệch mục tiêu điều khiển, lịch sử nâng và thời gian ổn định.
+  vận tốc hộp, sai lệch mục tiêu điều khiển và các mốc đã nâng/đặt.
   Đây là policy dùng trạng thái, chưa dùng camera.
 
 Reward hỗ trợ tiếp cận, kẹp, nâng, vận chuyển, hạ, thả, rút đầu kẹp và thành công.
-Các reward shaping được khóa theo giai đoạn: sau khi nâng đủ, reward nâng tắt; khi
-vào vùng đích, reward vận chuyển tắt và reward hạ vật lớn hơn reward của giai đoạn
-trước. Vì vậy giữ vật và nâng lên cao không còn tích lũy thêm điểm. Phạt thay đổi
-hành động và vận tốc khớp. Điều kiện thành công bắt buộc:
+Các reward vận chuyển, hạ, mở kẹp và rút tay dùng mức tiến bộ tốt nhất đã đạt trong
+episode. Đứng yên, đi lùi rồi lặp lại quãng đường cũ, hoặc liên tục gửi cùng một lệnh
+mở không tạo thêm điểm. Reward tiến bộ được chuẩn hóa theo `step_dt`, nên tổng điểm
+không phụ thuộc tần số điều khiển. Mốc đặt và nhả là bonus một lần; trong lúc chờ
+nhả có phạt thời gian nhẹ, và toàn episode có `time_penalty` để khuyến khích hoàn
+thành sớm. Vùng bắt đầu dạy nhả dùng XY dưới 25 mm và sai lệch Z dưới 12 mm.
+Mốc đặt chỉ được ghi khi gripper vẫn giữ hộp, TCP còn cách hộp dưới 45 mm và tốc
+độ hộp dưới 0.08 m/s; reward hạ cũng yêu cầu đang giữ hộp và tốc độ dưới 0.15 m/s.
+Vì vậy hộp bị quăng qua goal không nhận reward đặt/nhả. Điều kiện success bên dưới
+vẫn chặt hơn. Phạt thay đổi hành động và vận tốc khớp. Điều kiện
+thành công bắt buộc:
 
 1. Hộp từng được nâng trên vị trí nghỉ ít nhất 45 mm trong lúc ở gần đầu kẹp đang đóng.
 2. Tâm hộp cách đích dưới 20 mm theo XY, sai lệch độ cao dưới 8 mm.

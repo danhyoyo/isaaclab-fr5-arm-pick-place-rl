@@ -67,8 +67,7 @@ def state(env):
     # XY is inside the release radius does vertical descent earn progress.
     lower_xy_progress = ((LOWER_XY_ENTRY_TOL - xy_goal)
                          / (LOWER_XY_ENTRY_TOL - RELEASE_XY_TOL)).clamp(0, 1)
-    descent_range = max(LIFT_HEIGHT - REST_HEIGHT, 1.0e-6)
-    lower_z_progress = (1.0 - (pos[:, 2] - REST_HEIGHT).abs() / descent_range).clamp(0, 1)
+    lower_z_error = (pos[:, 2] - REST_HEIGHT).abs()
     placed_now_or_before = memory.placed | placement_now
     release_now = (placed_now_or_before & release_zone_now & open_now
                    & (object_speed < CONTROLLED_PLACE_MAX_SPEED))
@@ -87,10 +86,11 @@ def state(env):
                    lower_xy_score=lower_xy_progress,
                    lower_xy_active=(lifted_now & near_goal & ~memory.placed & controlled_hold
                                     & (object_speed < CONTROLLED_LOWER_MAX_SPEED)),
-                   lower_z_score=lower_z_progress,
+                   lower_z_error=lower_z_error,
                    lower_z_active=(lifted_now & (xy_goal < RELEASE_XY_TOL) & ~memory.placed
                                    & controlled_hold
                                    & (object_speed < CONTROLLED_LOWER_MAX_SPEED)),
+                   lower_z_target_error=RELEASE_Z_TOL,
                    opening_active=(placed_now_or_before & release_zone_now & ~memory.released
                                    & (object_speed < CONTROLLED_PLACE_MAX_SPEED)),
                    withdraw_score=(distance / 0.10).clamp(0, 1),

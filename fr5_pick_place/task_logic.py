@@ -72,6 +72,10 @@ def staged_rewards(object_pos, goal_pos, fingers, tcp_distance, lifted, rest_hei
         # XY alignment and vertical descent have independent best values.  A
         # small XY regression can therefore no longer cancel real Z progress.
         # Z is weighted more strongly because it is the final precision skill.
+        "lower_xy": 1.0 * lower_xy_gain * inv_dt,
+        "lower_z": 3.0 * lower_z_gain * inv_dt,
+        # Retained for callers that want the combined shaping value.  The
+        # environment logs lower_xy and lower_z separately.
         "lower": (1.0 * lower_xy_gain + 3.0 * lower_z_gain) * inv_dt,
         # Milestones are one-shot bonuses.  Opening pays only for previously
         # unseen physical opening, never merely for repeating an open command.
@@ -105,6 +109,8 @@ class EpisodeProgress:
         self.transport_gain = torch.zeros(num_envs, device=device)
         self.lower_xy_best = torch.zeros(num_envs, device=device)
         self.lower_xy_gain = torch.zeros(num_envs, device=device)
+        self.lower_z_started = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.lower_z_start_error = torch.zeros(num_envs, device=device)
         self.lower_z_best = torch.zeros(num_envs, device=device)
         self.lower_z_gain = torch.zeros(num_envs, device=device)
         self.opening_best = torch.zeros(num_envs, device=device)
@@ -133,6 +139,8 @@ class EpisodeProgress:
         self.transport_gain[ids] = 0
         self.lower_xy_best[ids] = 0
         self.lower_xy_gain[ids] = 0
+        self.lower_z_started[ids] = False
+        self.lower_z_start_error[ids] = 0
         self.lower_z_best[ids] = 0
         self.lower_z_gain[ids] = 0
         self.opening_best[ids] = 0
@@ -146,7 +154,7 @@ class EpisodeProgress:
                placement_now=None, release_now=None, opening=None, reach_score=None,
                reach_active=None, lift_score=None, lift_active=None, transport_score=None,
                transport_active=None, lower_xy_score=None, lower_xy_active=None,
-               lower_z_score=None, lower_z_active=None,
+               lower_z_error=None, lower_z_active=None, lower_z_target_error=0.0,
                opening_active=None, withdraw_score=None, withdraw_active=None):
         fresh = self.last_step != step
         was_lifted = self.lifted.clone()
@@ -186,7 +194,29 @@ class EpisodeProgress:
         update_best(lift_score, lift_active, self.lift_best, self.lift_gain)
         update_best(transport_score, transport_active, self.transport_best, self.transport_gain)
         update_best(lower_xy_score, lower_xy_active, self.lower_xy_best, self.lower_xy_gain)
-        update_best(lower_z_score, lower_z_active, self.lower_z_best, self.lower_z_gain)
+        # Start vertical progress at the height where the held object first
+        # enters the precise XY zone.  This removes the fixed-height dead zone:
+        # descent from any approach height now has a useful gradient.  The
+        # entry step only records a baseline and deliberately pays zero.
+        self.lower_z_gain[fresh] = 0
+        if lower_z_error is not None and lower_z_active is not None:
+            eligible = fresh & lower_z_active
+            starting = eligible & ~self.lower_z_started
+            self.lower_z_start_error[starting] = lower_z_error[starting]
+            self.lower_z_started[starting] = True
+            continuing = eligible & ~starting
+            target = torch.as_tensor(lower_z_target_error, device=lower_z_error.device,
+                                     dtype=lower_z_error.dtype)
+            # If the first eligible sample is already inside the placement
+            # height tolerance, descent is complete; do not create a tiny
+            # denominator that could turn a millimetre into a full bonus.
+            self.lower_z_best[starting & (lower_z_error <= target)] = 1.0
+            span = (self.lower_z_start_error - target).clamp(min=1.0e-6)
+            lower_z_score = ((self.lower_z_start_error - lower_z_error) / span).clamp(0, 1)
+            self.lower_z_gain[continuing] = (
+                lower_z_score[continuing] - self.lower_z_best[continuing]).clamp(min=0)
+            self.lower_z_best[continuing] = torch.maximum(
+                self.lower_z_best[continuing], lower_z_score[continuing])
         update_best(opening, opening_active, self.opening_best, self.opening_gain)
         update_best(withdraw_score, withdraw_active, self.withdraw_best, self.withdraw_gain)
         # The release pose is the baseline for withdrawal.  It must not count as
