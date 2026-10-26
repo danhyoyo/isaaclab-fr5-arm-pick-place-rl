@@ -9,9 +9,9 @@
 
 **Train and evaluate a FAIRINO FR5 arm to pick, lift, transfer, and release a cube in simulation.**
 
-![Parallel FR5 pick-and-place environments in Isaac Lab](docs/images/fr5-pick-place-simulation.png)
+![FR5 pick-and-place simulation demo](docs/images/fr5-rl-demo.gif)
 
-*Parallel FR5 pick-and-place environments running in Isaac Lab.*
+*FR5 pick-and-place simulation in Isaac Lab. [Watch the full-quality MP4](docs/media/fr5-rl-demo.mp4).*
 
 [Quick start](#quick-start) · [Architecture](#system-architecture) · [Training guide](TRAINING.md)
 
@@ -328,7 +328,9 @@ fr5_arm/
 ├── validate_asset.py            # Static asset and dependency validation
 ├── gripper_scene.py             # Standalone gripper motion check
 ├── check_contact.py             # Gripper contact check
-├── docs/images/                 # README media
+├── docs/
+│   ├── images/                  # README screenshot and animated GIF
+│   └── media/                   # Full-quality MP4 demo
 ├── fr5_description/             # URDF, composed USD layers, and meshes
 ├── fr5_pick_place/
 │   ├── __init__.py              # Gymnasium task registrations
